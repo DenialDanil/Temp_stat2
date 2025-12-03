@@ -9,15 +9,15 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 history = []
 
 @app.post("/data")
-async def receive(temp: float, hum: float, relay: int = 0):
+async def receive(data: dict):           # ← просто dict, а не окремі параметри
     item = {
-        "temp": temp,
-        "hum": hum,
-        "relay": relay,
+        "temp": data.get("temp", 0),
+        "hum": data.get("hum", 0),
+        "relay": data.get("relay", 0),
         "time": datetime.utcnow().strftime("%H:%M:%S")
     }
     history.append(item)
-    if len(history) > 300:          # тримаємо останні 300 вимірювань
+    if len(history) > 500:
         history.pop(0)
     print("Отримано:", item)
     return {"status": "ok", "total": len(history)}
