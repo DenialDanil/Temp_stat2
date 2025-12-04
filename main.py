@@ -5,27 +5,24 @@ from datetime import datetime
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-# Зберігаємо історію в пам’яті (вистачить на години/дні)
-history = []
-
-@app.post("/data")
-async def receive(data: dict):           # ← просто dict, а не окремі параметри
-    item = {
-        "temp": data.get("temp", 0),
-        "hum": data.get("hum", 0),
-        "relay": data.get("relay", 0),
-        "time": datetime.utcnow().strftime("%H:%M:%S")
-    }
-    history.append(item)
-    if len(history) > 500:
-        history.pop(0)
-    print("Отримано:", item)
-    return {"status": "ok", "total": len(history)}
-
-@app.get("/history")
-async def get_history():
-    return history[::-1]  # від нових до старих
+# Останні дані (стартові значення, щоб не було порожньо)
+latest = {"temp": 0.0, "hum": 0.0, "time": "—"}
 
 @app.get("/")
 async def root():
-    return {"message": "Temp_stat працює! Дані: /history"}
+    return {"message": "Temp_stat працює!"}
+
+@app.get("/data")
+async def get_data():
+    return latest  # завжди повертає останнє значення
+
+@app.post("/data")
+async def receive(temp: float = 0.0, hum: float = 0.0):
+    global latest
+    latest = {
+        "temp": round(temp, 1),
+        "hum": round(hum, 1),
+        "time": datetime.now().strftime("%H:%M:%S")
+    }
+    print("Отримано:", latest)
+    return {"status": "ok"}
