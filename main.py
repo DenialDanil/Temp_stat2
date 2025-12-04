@@ -5,30 +5,21 @@ from datetime import datetime
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-# Сюди пишуться всі дані
-history = []
-
-# Завжди є хоча б одне значення
-@app.get("/data")
-async def last():
-    if history:
-        return history[-1]
-    else:
-        return {"temp": 0.0, "hum": 0.0, "time": "—"}
+dani = []
 
 @app.post("/data")
-async def receive(temp: float = 0.0, hum: float = 0.0):
-    item = {
-        "temp": round(float(temp), 1),
-        "hum": round(float(hum), 1),
-        "time": datetime.now().strftime("%H:%M:%S")
-    }
-    history.append(item)
-    if len(history) > 500:
-        history.pop(0)
+async def receive(temp: float, hum: float):
+    item = {"temp": temp, "hum": hum, "time": datetime.now().strftime("%H:%M:%S")}
+    dani.append(item)
+    if len(dani) > 500:
+        dani.pop(0)
     print("Отримано:", item)
-    return {"status": "ok"}
+    return {"status": "}
+
+@app.get("/data")
+async def last():
+    return dani[-1] if dani else {"temp": 0, "hum": 0, "time": "--:--"}
 
 @app.get("/history")
-async def get_history():
-    return history[::-1] if history else [{"temp": 0.0, "hum": 0.0, "time": "—"}]
+async def history():
+    return dani[::-1]
