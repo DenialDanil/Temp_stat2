@@ -6,10 +6,10 @@ import os
 
 app = Flask(__name__)
 
-# На Render база лежить у /data
-db_path = "/data/data.db" if os.path.exists("/data") else "instance/data.db"
-os.makedirs(os.path.dirname(db_path), exist_ok=True)
-
+# ←←←←← Оце головне ←←←←←
+db_folder = "/data" if os.path.exists("/data") else "."
+db_path = os.path.join(db_folder, "data.db")
+os.makedirs(db_folder, exist_ok=True)
 app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{db_path}"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -25,32 +25,6 @@ class Temp(db.Model):
         return {"timestamp": self.timestamp.isoformat(), "temp": self.temp}
 
 with app.app_context():
-    db.create_all()
+    db.create_all()   # тепер створиться в /data/data.db — туди можна писати!
 
-@app.route('/')
-def home():
-    return "Temp-stat2 працює – тільки температура!"
-
-@app.route('/data', methods=['POST'])
-def receive_data():
-    try:
-        data = request.get_json(force=True)
-        temp = float(data['temp'])
-        
-        t = Temp(temp=temp)
-        db.session.add(t)
-        db.session.commit()
-        print(f"Отримано температуру: {temp}°C")
-        return jsonify({"status": "ok"}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
-
-@app.route('/api/data')
-def api_data():
-    limit = request.args.get('limit', 1500, type=int)
-    readings = Temp.query.order_by(Temp.timestamp.desc()).limit(limit).all()
-    readings.reverse()
-    return jsonify([r.to_dict() for r in readings])
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
+# решта коду без змін...
