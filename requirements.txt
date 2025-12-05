@@ -1,5 +1,0 @@
-fastapi
-uvicorn[standard]
-databases[postgresql]
-sqlalchemy
-psycopg2-binary
