@@ -17,16 +17,18 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 CORS(app)  # дозволяє запити з temp-m2.onrender.com
 db = SQLAlchemy(app)
 
-# Модель — тільки температура
-class Temp(db.Model):
+# Модель — температура + CO2
+class Measurement(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     temp = db.Column(db.Float, nullable=False)
+    co2 = db.Column(db.Integer, nullable=False, default=0)  # додали CO2 в ppm
 
     def to_dict(self):
         return {
             "timestamp": self.timestamp.isoformat(),
-            "temp": self.temp
+            "temp": self.temp,
+            "co2": self.co2
         }
 
 # Створюємо базу при старті
@@ -36,30 +38,31 @@ with app.app_context():
 # Головна сторінка — тепер не 404
 @app.route('/')
 def home():
-    return "Temp-stat2 працює – тільки температура! Готовий приймати дані на /data"
+    return "Temp-stat2 працює – температура + CO2! Готовий приймати дані на /data"
 
-# Прийом даних від ESP32
+# Прийом даних від ESP32 (температура + CO2)
 @app.route('/data', methods=['POST'])
 def receive_data():
     try:
         data = request.get_json(force=True)
-        temp = float(data['temp'])
+        temp = float(data.get('temp', 0.0))
+        co2 = int(data.get('co2', 0))
         
-        new_reading = Temp(temp=temp)
+        new_reading = Measurement(temp=temp, co2=co2)
         db.session.add(new_reading)
         db.session.commit()
         
-        print(f"Отримано температуру: {temp}°C")
+        print(f"Отримано: T={temp}°C, CO2={co2}ppm")
         return jsonify({"status": "ok"}), 200
     except Exception as e:
         print(f"Помилка: {e}")
         return jsonify({"error": str(e)}), 400
 
-# Віддача даних для графіку
+# Віддача даних для графіку (температура + CO2)
 @app.route('/api/data')
 def api_data():
     limit = request.args.get('limit', 1500, type=int)
-    readings = Temp.query.order_by(Temp.timestamp.desc()).limit(limit).all()
+    readings = Measurement.query.order_by(Measurement.timestamp.desc()).limit(limit).all()
     readings.reverse()  # від старого до нового
     return jsonify([r.to_dict() for r in readings])
 
