@@ -3,6 +3,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from datetime import datetime
 import os
+import csv
 
 app = Flask(__name__)
 
@@ -14,7 +15,7 @@ os.makedirs(db_folder, exist_ok=True)
 app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{db_path}"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-CORS(app)  # дозволяє запити з temp-m2.onrender.com
+CORS(app)
 db = SQLAlchemy(app)
 
 # Модель — усі датчики
@@ -40,6 +41,16 @@ class Measurement(db.Model):
 with app.app_context():
     db.create_all()
 
+# Шлях до папки для збереження файлів (в /data на Render)
+data_folder = db_folder
+csv_path = os.path.join(data_folder, "measurements.csv")
+
+# Створюємо CSV файл, якщо немає (з заголовками)
+if not os.path.exists(csv_path):
+    with open(csv_path, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(["timestamp", "temp", "co2", "tvoc", "light"])
+
 # Головна сторінка
 @app.route('/')
 def home():
@@ -56,13 +67,17 @@ def receive_data():
         tvoc = int(data.get('tvoc', 0))
         light = int(data.get('light', 0))
 
-        new_data = Measurement(temp=temp, co2=co2, tvoc=tvoc, light=light)
-        db.session.add(new_data)
+        m = Measurement(temp=temp, co2=co2, tvoc=tvoc, light=light)
+        db.session.add(m)
         db.session.commit()
+
+        # Додаткове збереження в CSV файл у папку /data (зберігається після перезапуску)
+        with open(csv_path, mode='a', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow([m.timestamp.isoformat(), m.temp, m.co2, m.tvoc, m.light])
 
         print(f"Отримано: T={temp}°C | CO₂={co2}ppm | TVOC={tvoc}ppb | Light={light}")
         return jsonify({"status": "ok"}), 200
-
     except Exception as e:
         print(f"Помилка: {e}")
         return jsonify({"error": str(e)}), 400
