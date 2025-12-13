@@ -1,4 +1,6 @@
-from flask import Flask, request, jsonify
+# app.py — ОСТАТОЧНА ВЕРСІЯ (Render, Railway, Fly.io тощо)
+
+from flask import Flask, request, jsonify, send_file
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from datetime import datetime, timedelta, date
@@ -8,19 +10,21 @@ import shutil
 
 app = Flask(__name__)
 
-# Шлях до /data на Render
+# === ПАПКА ДЛЯ ДАНИХ НА RENDER ===
 db_folder = "/data" if os.path.exists("/data") else "."
 os.makedirs(db_folder, exist_ok=True)
 
-# Налаштування БД
+# === БАЗА ДАНИХ ===
 db_path = os.path.join(db_folder, "data.db")
 app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{db_path}"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-CORS(app)
+# === CORS — дозволяє запити з будь-якого фронтенду ===
+CORS(app, resources={r"/*": {"origins": "*"}})
+
 db = SQLAlchemy(app)
 
-# Модель
+# === МОДЕЛЬ ===
 class Measurement(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
@@ -41,162 +45,129 @@ class Measurement(db.Model):
 with app.app_context():
     db.create_all()
 
-# Шляхи до файлів
+# === ШЛЯХИ ДО CSV ===
 today_csv = os.path.join(db_folder, "today.csv")
 yesterday_csv = os.path.join(db_folder, "yesterday.csv")
 
-# --- Ініціалізація CSV файлів (якщо їх немає) ---
-def init_csv_files():
-    today = date.today()
+# === ІНІЦІАЛІЗАЦІЯ ФАЙЛІВ ===
+def init_csv():
     header = ["timestamp", "temp", "co2", "tvoc", "light"]
+    for path in (today_csv, yesterday_csv):
+        if not os.path.exists(path):
+            with open(path, "w", newline="", encoding="utf-8") as f:
+                csv.writer(f).writerow(header)
 
-    if not os.path.exists(today_csv):
-        with open(today_csv, 'w', newline='', encoding='utf-8') as f:
-            writer = csv.writer(f)
-            writer.writerow(header)
+init_csv()
 
-    if not os.path.exists(yesterday_csv):
-        with open(yesterday_csv, 'w', newline='', encoding='utf-8') as f:
-            writer = csv.writer(f)
-            writer.writerow(header)
-
-init_csv_files()
-
-# --- Перевірка і ротація файлів при новій добі ---
-def rotate_daily_files_if_needed():
+# === РОТАЦІЯ ФАЙЛІВ ПРИ НОВІЙ ДОБІ ===
+def rotate_if_new_day():
     today = date.today()
-    today_str = today.isoformat()
+    if not os.path.exists(today_csv) or os.path.getsize(today_csv) == 0:
+        return  # ще немає даних
 
-    # Перевіряємо, чи перший рядок у today.csv має сьогоднішню дату
-    if os.path.exists(today_csv) and os.path.getsize(today_csv) > 0:
-        with open(today_csv, 'r', encoding='utf-8') as f:
-            first_line = f.readline().strip()
-            if first_line.startswith('#') or ',' not in first_line:
-                return  # це заголовок — все ок
+    # Перевіряємо дату першого рядка у today.csv
+    with open(today_csv, "r", encoding="utf-8") as f:
+        first_line = f.readline().strip()
+        if not first_line or first_line.startswith("timestamp"):
+            return
+        try:
+            first_ts = datetime.fromisoformat(first_line.split(",")[0].replace("Z", "+00:00"))
+            if first_ts.date() == today:
+                return
+        except:
+            pass
 
-            try:
-                first_timestamp = first_line.split(',')[0]
-                first_date = datetime.fromisoformat(first_timestamp.replace('Z', '+00:00')).date()
-                if first_date == today:
-                    return  # вже правильний файл
-            except:
-                pass
+    print(f"Нова доба ({today}) — ротація файлів...")
 
-    print(f"Нова доба! Ротація файлів: {today}")
-
-    # 1. Старий yesterday.csv → видаляємо
+    # 1. Видаляємо старий yesterday.csv
     if os.path.exists(yesterday_csv):
         os.remove(yesterday_csv)
-        print("Видалено старий yesterday.csv")
 
-    # 2. today.csv → перейменовуємо в yesterday.csv
+    # 2. today.csv → yesterday.csv
     if os.path.exists(today_csv):
         shutil.move(today_csv, yesterday_csv)
-        print("today.csv → yesterday.csv")
 
-    # 3. Створюємо новий today.csv
-    with open(today_csv, 'w', newline='', encoding='utf-8') as f:
-        writer = csv.writer(f)
-        writer.writerow(["timestamp", "temp", "co2", "tvoc", "light"])
-    print("Створено новий today.csv")
+    # 3. Новий today.csv
+    with open(today_csv, "w", newline="", encoding="utf-8") as f:
+        csv.writer(f).writerow(["timestamp", "temp", "co2", "tvoc", "light"])
 
-    # 4. Очищаємо БД — залишаємо тільки сьогодні + вчора
+    # 4. Очищаємо БДД — залишаємо тільки сьогодні + вчора
     cutoff = datetime.combine(today - timedelta(days=1), datetime.min.time())
     deleted = Measurement.query.filter(Measurement.timestamp < cutoff).delete()
     db.session.commit()
     if deleted:
-        print(f"Видалено {deleted} записів старше вчорашнього дня з БД")
+        print(f"Видалено {deleted} старих записів з БД")
 
-# Головна
+# === ГОЛОВНА ===
 @app.route('/')
 def home():
-    rotate_daily_files_if_needed()
-    return "Temp-stat2: дані за сьогодні та вчора зберігаються окремо!"
+    rotate_if_new_day()
+    return "<h1>Temp-m2 працює</h1><p>Дані за сьогодні + вчора. Все ок!</p>"
 
-# Прийом даних
+# === ПРИЙОМ ДАНИХ ВІД ESP32 ===
 @app.route('/data', methods=['POST'])
 def receive_data():
-    rotate_daily_files_if_needed()  # важливо: перевіряємо кожен раз
-
+    rotate_if_new_day()
     try:
         data = request.get_json(force=True)
-        temp = float(data.get('temp', 0.0))
-        co2 = int(data.get('co2', 0))
-        tvoc = int(data.get('tvoc', 0))
-        light = int(data.get('light', 0))
-
-        m = Measurement(temp=temp, co2=co2, tvoc=tvoc, light=light)
+        m = Measurement(
+            temp=float(data.get('temp', 0)),
+            co2=int(data.get('co2', 0)),
+            tvoc=int(data.get('tvoc', 0)),
+            light=int(data.get('light', 0))
+        )
         db.session.add(m)
         db.session.commit()
 
-        # Записуємо в today.csv
-        with open(today_csv, 'a', newline='', encoding='utf-8') as f:
-            writer = csv.writer(f)
-            writer.writerow([m.timestamp.isoformat(), m.temp, m.co2, m.tvoc, m.light])
+        # Запис у today.csv
+        with open(today_csv, "a", newline="", encoding="utf-8") as f:
+            csv.writer(f).writerow([m.timestamp.isoformat(), m.temp, m.co2, m.tvoc, m.light])
 
-        print(f"Записано: {temp}°C, CO₂={co2}, TVOC={tvoc}, Light={light}")
-
+        print(f"Отримано: {m.temp}°C | CO₂ {m.co2} | TVOC {m.tvoc} | Light {m.light}")
         return jsonify({"status": "ok"}), 200
     except Exception as e:
         db.session.rollback()
-        print(f"Помилка: {e}")
         return jsonify({"error": str(e)}), 400
 
-# API: всі дані за сьогодні + вчора
+# === API ===
 @app.route('/api/data')
-def api_data():
-    rotate_daily_files_if_needed()
-
+def api_all():
+    rotate_if_new_day()
     two_days_ago = datetime.utcnow() - timedelta(days=2)
     readings = Measurement.query.filter(Measurement.timestamp >= two_days_ago)\
-                               .order_by(Measurement.timestamp.asc())\
-                               .all()
-
+                               .order_by(Measurement.timestamp.asc()).all()
     return jsonify([r.to_dict() for r in readings])
 
-# Додаткові ендпоінти (корисно для фронтенду або дебагу)
 @app.route('/api/today')
 def api_today():
-    with open(today_csv, 'r', encoding='utf-8') as f:
-        lines = f.readlines()
-    data = []
-    for line in lines[1:]:  # пропускаємо заголовок
-        if line.strip():
-            parts = line.strip().split(',')
-            data.append({
-                "timestamp": parts[0],
-                "temp": float(parts[1]),
-                "co2": int(parts[2]),
-                "tvoc": int(parts[3]),
-                "light": int(parts[4])
-            })
-    return jsonify(data)
+    rotate_if_new_day()
+    if not os.path.exists(today_csv):
+        return jsonify([])
+    with open(today_csv, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        data = [row for row in reader]
+    return jsonify([{**row, "temp": float(row["temp"])} for row in data])
 
 @app.route('/api/yesterday')
 def api_yesterday():
     if not os.path.exists(yesterday_csv):
         return jsonify([])
-    with open(yesterday_csv, 'r', encoding='utf-8') as f:
-        lines = f.readlines()
-    data = []
-    for line in lines[1:]:
-        if line.strip():
-            parts = line.strip().split(',')
-            data.append({
-                "timestamp": parts[0],
-                "temp": float(parts[1]),
-                "co2": int(parts[2]),
-                "tvoc": int(parts[3]),
-                "light": int(parts[4])
-            })
-    return jsonify(data)
+    with open(yesterday_csv, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        data = [row for row in reader]
+    return jsonify([{**row, "temp": float(row["temp"])} for row in data])
 
-# Примусова ротація (для тестів)
-@app.route('/rotate')
-def force_rotate():
-    rotate_daily_files_if_needed()
-    return jsonify({"status": "rotated"})
+# === СКАЧУВАННЯ ФАЙЛІВ (за бажанням — можеш видалити) ===
+@app.route('/download/today')
+def download_today():    return send_file(today_csv, as_attachment=True)
 
+@app.route('/download/yesterday')
+def download_yesterday():return send_file(yesterday_csv, as_attachment=True)
+
+@app.route('/download/db')
+def download_db():       return send_file(db_path, as_attachment=True)
+
+# === ЗАПУСК ===
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
