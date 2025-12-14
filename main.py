@@ -1,33 +1,29 @@
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 import os
-from zoneinfo import ZoneInfo  # НОВЕ: для часових зон (Python 3.9+)
+from zoneinfo import ZoneInfo
 
 app = Flask(__name__)
-
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
 CORS(app, resources={r"/*": {"origins": "*"}})
 db = SQLAlchemy(app)
 
 class Measurement(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)  # Зберігаємо в UTC
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     temp = db.Column(db.Float, nullable=False)
     co2 = db.Column(db.Integer, nullable=False)
     tvoc = db.Column(db.Integer, nullable=False)
     light = db.Column(db.Integer, nullable=False)
 
     def to_dict(self):
-        # НОВЕ: Конвертуємо timestamp з UTC в Київський час
         kyiv_tz = ZoneInfo("Europe/Kyiv")
         local_timestamp = self.timestamp.replace(tzinfo=ZoneInfo("UTC")).astimezone(kyiv_tz)
-        
         return {
-            "timestamp": local_timestamp.isoformat(),  # Тепер з київським часом і +02:00/+03:00
+            "timestamp": local_timestamp.isoformat(),
             "temp": self.temp,
             "co2": self.co2,
             "tvoc": self.tvoc,
@@ -37,7 +33,7 @@ class Measurement(db.Model):
 with app.app_context():
     db.create_all()
 
-# Очищення — залишаємо на UTC (щоб правильно працювало)
+# Очищення старих даних — як і раніше (старше 2 днів від зараз в UTC)
 def cleanup_old_data():
     cutoff = datetime.utcnow() - timedelta(days=2)
     deleted = Measurement.query.filter(Measurement.timestamp < cutoff).delete()
@@ -48,7 +44,7 @@ def cleanup_old_data():
 @app.route('/')
 def home():
     cleanup_old_data()
-    return "<h1>Temp-m2 на Railway</h1><p>Backend з PostgreSQL працює! Час — київський.</p>"
+    return "<h1>Temp-m2 на Railway</h1><p>Симуляція: поділ 'сьогодні/вчора' по 22:41 за Києвом</p>"
 
 @app.route('/data', methods=['POST'])
 def receive_data():
@@ -70,7 +66,15 @@ def receive_data():
         print(f"Помилка: {e}")
         return jsonify({"error": str(e)}), 400
 
-# API — всі повертають час вже в київській зоні
+# === Нова логіка: поділ "сьогодні/вчора" по 22:41 за Києвом ===
+def get_simulated_today_start_kyiv():
+    """Повертає момент 22:41 сьогодні за Києвом, конвертований в UTC"""
+    kyiv_tz = ZoneInfo("Europe/Kyiv")
+    now_kyiv = datetime.now(kyiv_tz)
+    simulated_today_start_kyiv = now_kyiv.replace(hour=22, minute=41, second=0, microsecond=0)
+    return simulated_today_start_kyiv.astimezone(ZoneInfo("UTC"))
+
+# API: всі дані за останні 2 дні
 @app.route('/api/data')
 def api_data():
     cleanup_old_data()
@@ -79,19 +83,23 @@ def api_data():
                                .order_by(Measurement.timestamp.asc()).all()
     return jsonify([r.to_dict() for r in readings])
 
+# API: "сьогодні" — дані після 22:41 сьогодні за Києвом
 @app.route('/api/today')
 def api_today():
-    today_start_utc = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start_utc = get_simulated_today_start_kyiv()
     readings = Measurement.query.filter(Measurement.timestamp >= today_start_utc)\
                                .order_by(Measurement.timestamp.asc()).all()
     return jsonify([r.to_dict() for r in readings])
 
+# API: "вчора" — дані до 22:41 сьогодні за Києвом
 @app.route('/api/yesterday')
 def api_yesterday():
-    yesterday_start_utc = (datetime.utcnow() - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-    yesterday_end_utc = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    readings = Measurement.query.filter(Measurement.timestamp >= yesterday_start_utc, Measurement.timestamp < yesterday_end_utc)\
-                               .order_by(Measurement.timestamp.asc()).all()
+    today_start_utc = get_simulated_today_start_kyiv()
+    yesterday_start_utc = today_start_utc - timedelta(days=1)  # 22:41 вчора
+    readings = Measurement.query.filter(
+        Measurement.timestamp >= yesterday_start_utc,
+        Measurement.timestamp < today_start_utc
+    ).order_by(Measurement.timestamp.asc()).all()
     return jsonify([r.to_dict() for r in readings])
 
 if __name__ == '__main__':
