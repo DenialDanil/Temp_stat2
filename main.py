@@ -13,7 +13,7 @@ db = SQLAlchemy(app)
 
 class Measurement(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)  # Зберігаємо в UTC
     temp = db.Column(db.Float, nullable=False)
     co2 = db.Column(db.Integer, nullable=False)
     tvoc = db.Column(db.Integer, nullable=False)
@@ -33,6 +33,7 @@ class Measurement(db.Model):
 with app.app_context():
     db.create_all()
 
+# Очищення старих даних (старше 2 днів від зараз в UTC)
 def cleanup_old_data():
     cutoff = datetime.utcnow() - timedelta(days=2)
     deleted = Measurement.query.filter(Measurement.timestamp < cutoff).delete()
@@ -40,18 +41,10 @@ def cleanup_old_data():
     if deleted > 0:
         print(f"Видалено {deleted} старих записів")
 
-# === Симуляція: поділ по 22:41 за Києвом ===
-def get_split_point_kyiv():
-    """Повертає поточний момент 22:41 за Києвом (сьогодні), в UTC"""
-    kyiv_tz = ZoneInfo("Europe/Kyiv")
-    now_kyiv = datetime.now(kyiv_tz)
-    split_today_kyiv = now_kyiv.replace(hour=22, minute=41, second=0, microsecond=0)
-    return split_today_kyiv.astimezone(ZoneInfo("UTC"))
-
 @app.route('/')
 def home():
     cleanup_old_data()
-    return "<h1>Temp-m2 симуляція</h1><p>Поділ 'сьогодні/вчора' по 22:41 за Києвом</p>"
+    return "<h1>Temp-m2 на Railway</h1><p>Backend з PostgreSQL працює! Поділ днів — від 00:00 за Києвом</p>"
 
 @app.route('/data', methods=['POST'])
 def receive_data():
@@ -73,6 +66,14 @@ def receive_data():
         print(f"Помилка: {e}")
         return jsonify({"error": str(e)}), 400
 
+# === Звичайний поділ від 00:00 за Києвом ===
+def get_today_start_kyiv():
+    """Повертає 00:00 сьогодні за Києвом, в UTC"""
+    kyiv_tz = ZoneInfo("Europe/Kyiv")
+    now_kyiv = datetime.now(kyiv_tz)
+    today_start_kyiv = now_kyiv.replace(hour=0, minute=0, second=0, microsecond=0)
+    return today_start_kyiv.astimezone(ZoneInfo("UTC"))
+
 @app.route('/api/data')
 def api_data():
     cleanup_old_data()
@@ -83,18 +84,18 @@ def api_data():
 
 @app.route('/api/today')
 def api_today():
-    split_point_utc = get_split_point_kyiv()
-    readings = Measurement.query.filter(Measurement.timestamp >= split_point_utc)\
+    today_start_utc = get_today_start_kyiv()
+    readings = Measurement.query.filter(Measurement.timestamp >= today_start_utc)\
                                .order_by(Measurement.timestamp.asc()).all()
     return jsonify([r.to_dict() for r in readings])
 
 @app.route('/api/yesterday')
 def api_yesterday():
-    split_point_today_utc = get_split_point_kyiv()
-    split_point_yesterday_utc = split_point_today_utc - timedelta(days=1)
+    today_start_utc = get_today_start_kyiv()
+    yesterday_start_utc = today_start_utc - timedelta(days=1)
     readings = Measurement.query.filter(
-        Measurement.timestamp >= split_point_yesterday_utc,
-        Measurement.timestamp < split_point_today_utc
+        Measurement.timestamp >= yesterday_start_utc,
+        Measurement.timestamp < today_start_utc
     ).order_by(Measurement.timestamp.asc()).all()
     return jsonify([r.to_dict() for r in readings])
 
