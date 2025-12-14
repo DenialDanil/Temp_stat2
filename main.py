@@ -1,3 +1,5 @@
+# main.py — Backend для Railway з PostgreSQL (persistent)
+
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
@@ -34,7 +36,7 @@ class Measurement(db.Model):
 with app.app_context():
     db.create_all()  # Створює таблицю, якщо немає
 
-# Автоматичне очищення старих даних (старше 2 днів, щоб база не росла)
+# Автоматичне очищення старих даних (старше 2 днів)
 def cleanup_old_data():
     cutoff = datetime.utcnow() - timedelta(days=2)
     deleted = Measurement.query.filter(Measurement.timestamp < cutoff).delete()
