@@ -3,3 +3,4 @@ flask-sqlalchemy
 flask-cors
 psycopg2-binary  # для PostgreSQL
 gunicorn  # для запуску в продакшні (рекомендую)
+requests
