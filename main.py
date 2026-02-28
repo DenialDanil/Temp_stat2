@@ -17,8 +17,8 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 db = SQLAlchemy(app)
 
 # --- Налаштування Telegram ---
-TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN')
-TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
+TELEGRAM_TOKEN = os.environ.get('8676636511:AAG3Tx9PGwtNjzYDK7GhyH1nqrvfTudKHnQ')
+TELEGRAM_CHAT_ID = os.environ.get('1938982649')
 
 # Словник для збереження часу останнього сповіщення (щоб не було спаму)
 # Зберігається в оперативній пам'яті сервера
