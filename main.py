@@ -30,7 +30,7 @@ last_alerts = {
 }
 
 # Інтервал між повторними сповіщеннями (наприклад, 10 хвилин)
-ALERT_INTERVAL = timedelta(minutes=10)
+ALERT_INTERVAL = timedelta(seconds=10)
 
 # --- Модель бази даних ---
 class Measurement(db.Model):
