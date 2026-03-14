@@ -30,7 +30,7 @@ last_alerts = {
 }
 
 # Інтервал між повторними сповіщеннями (наприклад, 10 хвилин)
-ALERT_INTERVAL = timedelta(seconds=10)
+ALERT_INTERVAL = timedelta(minutes=10)
 
 # --- Модель бази даних ---
 class Measurement(db.Model):
@@ -102,11 +102,11 @@ def check_and_notify(temp, co2, tvoc, light):
             send_telegram_alert(f"❄️ *Занадто холодно!* \nТемпература: `{temp}°C`.")
             last_alerts["temp"] = now
 
-    # 4. Перевірка Освітленості//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    #if light < 100:
-       # if last_alerts["light"] is None or (now - last_alerts["light"]) > ALERT_INTERVAL:
-            #send_telegram_alert(f"🌑 *Недостатньо світла!* \nРівень: `{light} lux`. Це може втомлювати очі.")
-           # last_alerts["light"] = now
+    #4. Перевірка Освітленості
+    if light < 100:
+       if last_alerts["light"] is None or (now - last_alerts["light"]) > ALERT_INTERVAL:
+            send_telegram_alert(f"🌑 *Недостатньо світла!* \nРівень: `{light} lux`. Це може втомлювати очі.")
+           last_alerts["light"] = now
 
 def cleanup_old_data():
     """Видалення даних старше 2 днів"""
